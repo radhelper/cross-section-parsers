@@ -9,6 +9,8 @@ import glob
 
 def main():
     tmp_dir = "/tmp/parserSDC"
+    folder_p = "logs_parsed"
+
     if not os.path.isdir(tmp_dir):
         os.mkdir(tmp_dir)
     else:
@@ -30,12 +32,9 @@ def main():
 
     all_logs_tmp = [y for x in os.walk(tmp_dir) for y in glob.glob(os.path.join(x[0], '*.log'))]
     for log in all_logs_tmp:
-        os.system(f"mv {log} {tmp_dir}/")
+        os.system(f"mv {log} {tmp_dir}/ 2>/dev/null")
 
     machine_dict = dict()
-
-    header_csv = ["time", "machine", "benchmark", "header", "#SDC", "#abort",   "#end","acc_err", "acc_time",
-                  "file_path", "is_it_problematic"]
 
     total_sdc = 0
 
@@ -43,13 +42,13 @@ def main():
 
     all_logs.sort()
 
-    folder_p = "logs_parsed"
-
     if not os.path.isdir(folder_p):
         os.mkdir(folder_p)
 
+    # Header for all csvs
+    header_csv = ["time", "machine", "benchmark", "#SDC", "#abort", "#end", "acc_time", "header", "acc_err",
+                  "file_path", "is_it_problematic"]
     for fi in all_logs:
-
         m = re.match(r'.*/(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(.*)_(.*).log', fi)
         if m:
             year = int(m.group(1))
@@ -61,7 +60,7 @@ def main():
             benchmark = m.group(7)
             machine_name = m.group(8)
 
-            start_dt = datetime(year, month, day, hour, minute, sec)
+            start_dt = datetime(year, month, day, hour, minute, sec).ctime()
             sdc, end, abort, acc_time, acc_err = [0] * 5
             header = "unknown"
             with open(fi, "r") as lines:
@@ -93,19 +92,22 @@ def main():
                     m = re.match(".*END.*", line)
                     if m:
                         end = 1
+            new_line_dict = {
+                "time": start_dt, "machine": machine_name, "benchmark": benchmark, "header": header,
+                "#SDC": sdc, "#abort": abort, "#end": end, "acc_err": acc_err, "acc_time": acc_time,
+                "file_path": fi, "is_it_problematic": header == "unknown"
+            }
 
             with open(f'./{folder_p}/logs_parsed_{machine_name}.csv', 'a') as fp:
-                good_fp = csv.writer(fp, delimiter=';')
+
+                csv_writer = csv.DictWriter(fp, fieldnames=header_csv, delimiter=';')
 
                 if machine_name not in machine_dict:
                     machine_dict[machine_name] = 1
-                    good_fp.writerow(header_csv)
+                    csv_writer.writeheader()
                     print(f"Machine first time: {machine_name}")
-                is_problematic = header == "unknown"
-                good_fp.writerow(
-                    [start_dt.ctime(), machine_name, benchmark, header, sdc, acc_err, acc_time, abort, end, fi,
-                     is_problematic]
-                )
+
+                csv_writer.writerow(new_line_dict)
 
     print(f"\n\t\tTOTAL_SDC: {total_sdc}")
 
