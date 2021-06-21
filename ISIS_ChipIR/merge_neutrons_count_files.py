@@ -4,6 +4,7 @@ import sys
 # Default line in the logs
 DEFAULT_CHIPIR_LINE_SIZE = 80
 
+
 def merge_files():
     output_file = sys.argv[1]
     paths = sys.argv[2:]

@@ -47,7 +47,7 @@ def main():
 
     # Header for all csvs
     header_csv = ["time", "machine", "benchmark", "#SDC", "#abort", "#end", "acc_time", "header", "acc_err",
-                  "file_path", "is_it_problematic"]
+                  "file_path"]
     for fi in all_logs:
         m = re.match(r'.*/(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(.*)_(.*).log', fi)
         if m:
@@ -93,9 +93,8 @@ def main():
                     if m:
                         end = 1
             new_line_dict = {
-                "time": start_dt, "machine": machine_name, "benchmark": benchmark, "header": header,
-                "#SDC": sdc, "#abort": abort, "#end": end, "acc_err": acc_err, "acc_time": acc_time,
-                "file_path": fi, "is_it_problematic": header == "unknown"
+                "time": start_dt, "machine": machine_name, "benchmark": benchmark, "header": header, "#SDC": sdc,
+                "#abort": abort, "#end": end, "acc_err": acc_err, "acc_time": acc_time, "file_path": fi
             }
 
             with open(f'./{folder_p}/logs_parsed_{machine_name}.csv', 'a') as fp:

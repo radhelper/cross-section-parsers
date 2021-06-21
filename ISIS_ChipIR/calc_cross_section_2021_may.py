@@ -2,12 +2,12 @@
 
 import sys
 import pandas as pd
+import numpy as np
 from datetime import timedelta
 from datetime import datetime
 
-# smallest run in minutes
-SMALLEST_RUN = timedelta(minutes=20)
-ONE_HOUR = 60
+# smallest run in hour
+ONE_HOUR = pd.Timedelta(1, 'h')
 
 
 def read_count_file(in_file_name):
@@ -52,7 +52,6 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
             last_dt = cur_dt
             continue
 
-        # if first_curr_integral is not None:
         if first_fission_counter is not None:
             if fission_counter == last_fission_counter:
                 beam_off_time += (cur_dt - last_dt).total_seconds()  # add the diff of beam off i and i - 1
@@ -113,28 +112,37 @@ def pre_process_data(full_file_lines):
 
 
 def main():
-    # if len(sys.argv) < 4:
-    #     print("Usage: %s <neutron counts input file> <csv file> <factor> <distance factor file>" % (sys.argv[0]))
-    #     sys.exit(1)
+    if len(sys.argv) < 4:
+        print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <factor> <distance factor file>")
+        exit(1)
 
-    in_file_name = sys.argv[1]
+    neutron_count_file = sys.argv[1]
     csv_file_name = sys.argv[2]
-    # factor = float(sys.argv[3])
-    # distance_factor_file = sys.argv[4]
+    factor = float(sys.argv[3])
+    distance_factor_file = sys.argv[4]
+
     # # Load all distances before continue
-    # distance_data = get_distance_data(distance_factor_file=distance_factor_file)
+    distance_data = get_distance_data(distance_factor_file=distance_factor_file)
+    # We need to read the neutron count files before calling get_fluency_flux
+    neutron_count = read_count_file(neutron_count_file)
 
     csv_out_file_summary = csv_file_name.replace(".csv", "_cross_section.csv")
     print(f"in: {csv_file_name}")
     print(f"out: {csv_out_file_summary}")
 
-    input_csv = pd.read_csv(csv_file_name, delimiter=";")
+    input_csv = pd.read_csv(csv_file_name, delimiter=";", parse_dates=["time"])
     # grouping the benchmarks
-    grouped_benchmarks = input_csv.set_index(["machine", "benchmark", "header"])
-    # We need to read the neutron count files before calling get_fluency_flux
-    # file_lines = read_count_file(in_file_name)
+    grouped_benchmarks = input_csv.drop(["file_path"], axis=1)
+    # Sort based on the time
+    grouped_benchmarks = grouped_benchmarks.sort_values("time")
 
-    print(grouped_benchmarks)
+    # Cut the runs with a 1h interval
+    cut_final_df = grouped_benchmarks.groupby(
+        ["machine", "benchmark", "header", pd.Grouper(key='time', freq='60min', origin='start')]).sum()
+
+    cut_final_df = cut_final_df.rename(columns={"time": "start_dt"})
+
+    cut_final_df.to_csv(csv_out_file_summary)
 
     # header_summary = ["start timestamp", "end timestamp", "Machine", "benchmark",
     #                   "header info", "#lines computed", "#SDC", "#AccTime", "#(Abort==0)",
