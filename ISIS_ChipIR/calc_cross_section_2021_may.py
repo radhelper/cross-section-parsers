@@ -222,6 +222,8 @@ def main():
             })
             i += 1
 
+    final_df = pd.DataFrame(final_processed_data)
+    final_df.to_csv(csv_out_file_summary)
 
 #########################################################
 #                    Main Thread                        #
