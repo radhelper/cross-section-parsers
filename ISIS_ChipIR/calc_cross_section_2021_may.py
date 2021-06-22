@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-
+import csv
 import sys
 import pandas as pd
 import numpy as np
-from datetime import timedelta
-from datetime import datetime
+from datetime import timedelta, datetime
 
 # smallest run in hour
-ONE_HOUR = pd.Timedelta(1, 'h')
+ONE_HOUR = 60
+SMALLEST_RUN = timedelta(minutes=20)
 
 
 def read_count_file(in_file_name):
@@ -28,7 +28,8 @@ def read_count_file(in_file_name):
             if "N/A" in line:
                 break
 
-            file_lines.append(line)
+            file_lines.append(line_split)
+    file_lines = np.array(file_lines)
     return file_lines
 
 
@@ -71,26 +72,6 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
     return 0, 0
 
 
-def check_distance_factor(distance_data, start_dt, board):
-    for t in distance_data:
-        if t['board'] in board and t['start'] <= start_dt <= t['end']:
-            return float(t['Distance attenuation'])
-
-    raise ValueError("Not suposed to be here {} {}".format(start_dt, board))
-
-
-def get_distance_data(distance_factor_file) -> pd.DataFrame:
-    distance_df = pd.read_csv(distance_factor_file)
-    # Replace the hours and the minutes to the last
-    distance_df["start"] = distance_df["start"].apply(
-        lambda row: datetime.strptime(row, "%m/%d/%Y").replace(hour=23, minute=59)
-    )
-    distance_df["end"] = distance_df["end"].apply(
-        lambda row: datetime.strptime(row, "%m/%d/%Y").replace(hour=23, minute=59)
-    )
-    return distance_df
-
-
 def pre_process_data(full_file_lines):
     """
     I group all the possible configurations in a dictionary
@@ -102,7 +83,7 @@ def pre_process_data(full_file_lines):
     grouped_benchmarks = {}
     for i in full_file_lines:
         # MACHINE + BENCHMARK + LOG HEADER
-        key = i[1] + i[2] + i[3]
+        key = i["machine"] + i["benchmark"] + i["header"]
         if key not in grouped_benchmarks:
             grouped_benchmarks[key] = []
 
@@ -112,129 +93,134 @@ def pre_process_data(full_file_lines):
 
 
 def main():
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <factor> <distance factor file>")
         exit(1)
 
     neutron_count_file = sys.argv[1]
     csv_file_name = sys.argv[2]
-    factor = float(sys.argv[3])
-    distance_factor_file = sys.argv[4]
+    distance_factor_file = sys.argv[3]
+    print(f"Generating cross section for {csv_file_name}")
+    print(f"- {distance_factor_file} for distance")
+    print(f"- {neutron_count_file} for neutrons")
 
     # # Load all distances before continue
-    distance_data = get_distance_data(distance_factor_file=distance_factor_file)
+    distance_data = pd.read_csv(distance_factor_file)
+    # Replace the hours and the minutes to the last
+    distance_data["start"] = distance_data["start"].apply(
+        lambda row: datetime.strptime(row, "%m/%d/%Y").replace(hour=0, minute=0)
+    )
+    distance_data["end"] = distance_data["end"].apply(
+        lambda row: datetime.strptime(row, "%m/%d/%Y").replace(hour=23, minute=59)
+    )
+    # -----------------------------------------------------------------------------------------------------------------
     # We need to read the neutron count files before calling get_fluency_flux
     neutron_count = read_count_file(neutron_count_file)
 
     csv_out_file_summary = csv_file_name.replace(".csv", "_cross_section.csv")
     print(f"in: {csv_file_name}")
     print(f"out: {csv_out_file_summary}")
+    # -----------------------------------------------------------------------------------------------------------------
+    with open(csv_file_name, "r") as csv_input:
+        reader = csv.DictReader(csv_input, delimiter=';')
+        full_lines = list(reader)
 
-    input_csv = pd.read_csv(csv_file_name, delimiter=";", parse_dates=["time"])
+    # List of dicts that contains all the final data
+    final_processed_data = list()
+
     # grouping the benchmarks
-    grouped_benchmarks = input_csv.drop(["file_path"], axis=1)
-    # Sort based on the time
-    grouped_benchmarks = grouped_benchmarks.sort_values("time")
+    grouped_benchmarks = pre_process_data(full_file_lines=full_lines)
 
-    # Cut the runs with a 1h interval
-    cut_final_df = grouped_benchmarks.groupby(
-        ["machine", "benchmark", "header", pd.Grouper(key='time', freq='60min', origin='start')]).sum()
+    for bench in grouped_benchmarks:
+        print("Parsing for {}".format(bench))
+        lines = grouped_benchmarks[bench]
+        i = 0
+        while i < len(lines) - 1:
+            try:
+                start_dt = datetime.strptime(lines[i]["time"].strip(), "%c")
+                end_dt = datetime.strptime(lines[i + 1]["time"].strip(), "%c")
+            except ValueError as err:
+                print(err)
+                continue
 
-    cut_final_df = cut_final_df.rename(columns={"time": "start_dt"})
+            machine = lines[i]["machine"]
+            bench = lines[i]["benchmark"]
+            header_info = lines[i]["header"]
+            # acc_time
+            acc_time_s = float(lines[i]["acc_time"])
+            # #SDC
+            sdc_s = int(lines[i]["#SDC"])
+            # abort
+            abort_zero_s = 0
+            if int(lines[i]["#abort"]) == 0 and int(lines[i]["#end"]) == 0:
+                abort_zero_s += 1
 
-    cut_final_df.to_csv(csv_out_file_summary)
+            first_i = i
+            while (end_dt - start_dt) < timedelta(minutes=ONE_HOUR):
+                i += 1
+                if i >= (len(lines) - 1):  # end of lines
+                    break
+                if lines[first_i]["benchmark"] != lines[i]["benchmark"] or lines[first_i]["header"] != lines[i][
+                    "header"]:
+                    print("ISSO ACONTECEU NATURALMENTE")
+                    continue
 
-    # header_summary = ["start timestamp", "end timestamp", "Machine", "benchmark",
-    #                   "header info", "#lines computed", "#SDC", "#AccTime", "#(Abort==0)",
-    #                   "Flux 1h", "Flux AccTime", "Fluence(Flux * $AccTime)",
-    #                   "Fluence AccTime(FluxAccTime * $AccTime)", "Cross Section SDC",
-    #                   "Cross Section Crash", "Time Beam Off (sec)", "Cross Section SDC AccTime",
-    #                   "Cross Section Crash AccTime", "Time Beam Off AccTime (sec)", "distance_factor"]
-    #
-    # for bench in grouped_benchmarks:
-    #     print("Parsing for {}".format(bench))
-    #     lines = grouped_benchmarks[bench]
-    #     i = 0
-    #     while i < len(lines) - 1:
-    #         try:
-    #             start_dt = datetime.strptime(lines[i][0].strip(), "%c")
-    #             end_dt = datetime.strptime(lines[i + 1][0].strip(), "%c")
-    #         except ValueError as err:
-    #             print(err)
-    #             continue
-    #
-    #         machine = lines[i][1]
-    #         bench = lines[i][2]
-    #         header_info = lines[i][3]
-    #         # acc_time
-    #         acc_time_s = float(lines[i][6])
-    #         # #SDC
-    #         sdc_s = int(lines[i][4])
-    #         # abort
-    #         abort_zero_s = 0
-    #         if int(lines[i][7]) == 0 and int(lines[i][8]) == 0:
-    #             abort_zero_s += 1
-    #
-    #         first_i = i
-    #         while (end_dt - start_dt) < timedelta(minutes=ONE_HOUR):
-    #             i += 1
-    #             if i >= (len(lines) - 1):  # end of lines
-    #                 break
-    #             if lines[first_i][2] != lines[i][2] or lines[first_i][3] != lines[i][3]:
-    #                 print("ISSO ACONTECEU NATURALMENTE")
-    #                 continue
-    #
-    #             acc_time_s += float(lines[i][6])
-    #             sdc_s += int(lines[i][4])
-    #             if int(lines[i][7]) == 0 and int(lines[i][8]) == 0:
-    #                 abort_zero_s += 1
-    #
-    #             end_dt = datetime.strptime(lines[i + 1][0].strip(), "%c")
-    #
-    #         # why consider such a small run???
-    #         if (end_dt - start_dt) < SMALLEST_RUN:
-    #             i += 1
-    #             continue
-    #
-    #         print("Generating cross section for {}, start {} end {}".format(bench.strip(), start_dt, end_dt))
-    #
-    #         # compute 1h flux; sum SDC, ACC_TIME, Abort with 0; compute fluency (flux*(sum ACC_TIME))
-    #         distance_factor = check_distance_factor(distance_data=distance_data, start_dt=start_dt,
-    #                                                 board=lines[i][1])
-    #
-    #         flux, time_beam_off = get_fluency_flux(start_dt=start_dt, end_dt=(start_dt + timedelta(minutes=60)),
-    #                                                file_lines=file_lines, factor=factor,
-    #                                                distance_factor=distance_factor)
-    #         flux_acc_time, time_beam_off_acc_time = get_fluency_flux(start_dt=start_dt,
-    #                                                                  end_dt=(
-    #                                                                          start_dt + timedelta(
-    #                                                                      seconds=acc_time_s)),
-    #                                                                  file_lines=file_lines, factor=factor,
-    #                                                                  distance_factor=distance_factor)
-    #
-    #         fluency = flux * acc_time_s
-    #         fluency_acc_time = flux_acc_time * acc_time_s
-    #         if fluency > 0:
-    #             cross_section = sdc_s / fluency
-    #             cross_section_crash = abort_zero_s / fluency
-    #         else:
-    #             cross_section = 0
-    #             cross_section_crash = 0
-    #         if fluency_acc_time > 0:
-    #             cross_section_acc_time = sdc_s / fluency_acc_time
-    #             cross_section_crash_acc_time = abort_zero_s / fluency_acc_time
-    #         else:
-    #             cross_section_acc_time = 0
-    #             cross_section_crash_acc_time = 0
-    #
-    #         # final row for full file, and almost final for summary file
-    #         row = [start_dt.ctime(), end_dt.ctime(), machine, bench, header_info,
-    #                (i - first_i + 1), sdc_s, acc_time_s, abort_zero_s, flux,
-    #                flux_acc_time, fluency, fluency_acc_time,
-    #                cross_section, cross_section_crash, time_beam_off, cross_section_acc_time,
-    #                cross_section_crash_acc_time, time_beam_off_acc_time, distance_factor]
-    #
-    #         i += 1
+                acc_time_s += float(lines[i]["acc_time"])
+                sdc_s += int(lines[i]["#SDC"])
+                if int(lines[i]["#abort"]) == 0 and int(lines[i]["#end"]) == 0:
+                    abort_zero_s += 1
+
+                end_dt = datetime.strptime(lines[i + 1]["time"].strip(), "%c")
+
+            # why consider such a small run???
+            if (end_dt - start_dt) < SMALLEST_RUN:
+                i += 1
+                continue
+
+            print("Generating cross section for {}, start {} end {}".format(bench.strip(), start_dt, end_dt))
+
+            # compute 1h flux; sum SDC, ACC_TIME, Abort with 0; compute fluency (flux*(sum ACC_TIME))
+            distance_line = distance_data[(distance_data["board"].str.contains(machine)) &
+                                          (distance_data["start"] <= start_dt) &
+                                          (start_dt <= distance_data["end"])]
+            factor, distance_factor = distance_line[["factor", "Distance attenuation"]]
+
+            flux, time_beam_off = get_fluency_flux(start_dt=start_dt, end_dt=(start_dt + timedelta(minutes=60)),
+                                                   file_lines=neutron_count, factor=factor,
+                                                   distance_factor=distance_factor)
+            flux_acc_time, time_beam_off_acc_time = get_fluency_flux(start_dt=start_dt,
+                                                                     end_dt=(start_dt + timedelta(seconds=acc_time_s)),
+                                                                     file_lines=neutron_count, factor=factor,
+                                                                     distance_factor=distance_factor)
+
+            fluency = flux * acc_time_s
+            fluency_acc_time = flux_acc_time * acc_time_s
+            if fluency > 0:
+                cross_section = sdc_s / fluency
+                cross_section_crash = abort_zero_s / fluency
+            else:
+                cross_section = 0
+                cross_section_crash = 0
+            if fluency_acc_time > 0:
+                cross_section_acc_time = sdc_s / fluency_acc_time
+                cross_section_crash_acc_time = abort_zero_s / fluency_acc_time
+            else:
+                cross_section_acc_time = 0
+                cross_section_crash_acc_time = 0
+
+            # final row for full file, and almost final for summary file
+            final_processed_data.append({
+                "start timestamp": start_dt.ctime(), "end timestamp": end_dt.ctime(), "Machine": machine,
+                "benchmark": bench,
+                "header info": header_info, "#lines computed": (i - first_i + 1), "#SDC": sdc_s, "#AccTime": acc_time_s,
+                "#(Abort==0)": abort_zero_s, "Flux 1h": flux, "Flux AccTime": flux_acc_time,
+                "Fluence(Flux * $AccTime)": fluency, "Fluence AccTime(FluxAccTime * $AccTime)": fluency_acc_time,
+                "Cross Section SDC": cross_section, "Cross Section Crash": cross_section_crash,
+                "Time Beam Off (sec)": time_beam_off, "Cross Section SDC AccTime": cross_section_acc_time,
+                "Cross Section Crash AccTime": cross_section_crash_acc_time,
+                "Time Beam Off AccTime (sec)": time_beam_off_acc_time
+            })
+            i += 1
 
 
 #########################################################
