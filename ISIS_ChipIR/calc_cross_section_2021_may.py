@@ -10,7 +10,7 @@ def read_count_file(in_file_name):
     """
     Read neutron log file
     :param in_file_name: neutron log filename
-    :return: list with all neutron lines
+    :return: numpy array with all neutron lines
     """
     file_lines = list()
     with open(in_file_name, 'r') as in_file:
@@ -20,9 +20,6 @@ def read_count_file(in_file_name):
             if len(line_split) < 7:
                 print(f"Ignoring line (malformed):{line}")
                 continue
-            if "N/A" in line:
-                break
-
             year_date, day_time, sec_frac = line_split[0], line_split[1], line_split[2]
             fission_counter = float(line_split[6])
 
@@ -30,8 +27,7 @@ def read_count_file(in_file_name):
             cur_dt = datetime.strptime(year_date + " " + day_time + sec_frac, "%d/%m/%Y %H:%M:%S.%f")
 
             file_lines.append((cur_dt, fission_counter))
-    file_lines = np.array(file_lines)
-    return file_lines
+    return np.array(file_lines)
 
 
 def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
@@ -75,7 +71,7 @@ def generate_cross_section(row, distance_data, neutron_count):
     start_dt = row["start_dt"]
     end_dt = start_dt + pd.Timedelta(hours=1)
     machine = row["machine"]
-    acc_time_s = row["acc_time"]
+    acc_time = row["acc_time"]
     sdc_s = row["#SDC"]
     due_s = row["#DUE"]
     # Slicing the neutron count to not run thought all of it
@@ -90,12 +86,13 @@ def generate_cross_section(row, distance_data, neutron_count):
     print(f"Generating cross section for {row['benchmark']}, start {start_dt} end {end_dt}")
     flux, time_beam_off = get_fluency_flux(start_dt=start_dt, end_dt=end_dt, file_lines=neutron_count_cut,
                                            factor=factor, distance_factor=distance_factor)
-    fluency = flux * acc_time_s
+    fluency = flux * acc_time
     cross_section_sdc = cross_section_due = 0
     if fluency > 0:
         cross_section_sdc = sdc_s / fluency
         cross_section_due = due_s / fluency
 
+    row["end_dt"] = end_dt
     row["Flux 1h"] = flux
     row["Fluency(Flux * $AccTime)"] = fluency
     row["Cross Section SDC"] = cross_section_sdc
@@ -106,7 +103,7 @@ def generate_cross_section(row, distance_data, neutron_count):
 
 def main():
     if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <distance file>")
+        print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <distance factor file>")
         exit(1)
 
     neutron_count_file = sys.argv[1]
