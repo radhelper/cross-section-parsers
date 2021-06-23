@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import csv
 import re
 from datetime import datetime
@@ -68,8 +67,7 @@ def main():
                 for line in lines:
                     m = re.match(r".*HEADER(.*)", line)
                     if m:
-                        header = m.group(1)
-                        header.replace(";", "-")
+                        header = m.group(1).replace(";", "-")
 
                     m = re.match(".*SDC.*", line)
                     if m:
@@ -98,14 +96,11 @@ def main():
             }
 
             with open(f'./{folder_p}/logs_parsed_{machine_name}.csv', 'a') as fp:
-
                 csv_writer = csv.DictWriter(fp, fieldnames=header_csv, delimiter=';')
-
                 if machine_name not in machine_dict:
                     machine_dict[machine_name] = 1
                     csv_writer.writeheader()
                     print(f"Machine first time: {machine_name}")
-
                 csv_writer.writerow(new_line_dict)
 
     print(f"\n\t\tTOTAL_SDC: {total_sdc}")

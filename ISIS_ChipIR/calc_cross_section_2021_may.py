@@ -41,7 +41,7 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
     first_curr_integral = None
     first_fission_counter = None
 
-    # It is better to modify line on source than here
+    # It is faster to modify line on source than here
     for (cur_dt, fission_counter) in file_lines:
         # Generate datetime for line
         if start_dt <= cur_dt and first_fission_counter is None:
@@ -73,43 +73,40 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
 
 def generate_cross_section(row, distance_data, neutron_count):
     start_dt = row["start_dt"]
+    end_dt = start_dt + pd.Timedelta(hours=1)
     machine = row["machine"]
     acc_time_s = row["acc_time"]
     sdc_s = row["#SDC"]
-    abort_zero_s = row["#abort"]
+    due_s = row["#DUE"]
     # Slicing the neutron count to not run thought all of it
-    neutron_count_cut = neutron_count[neutron_count[:, 0] >= start_dt]
+    neutron_count_cut = neutron_count[(neutron_count[:, 0] >= start_dt) & (neutron_count[:, 0] <= end_dt)]
 
     distance_line = distance_data[(distance_data["board"].str.contains(machine)) &
                                   (distance_data["start"] <= start_dt) &
                                   (start_dt <= distance_data["end"])]
     factor = float(distance_line["factor"])
     distance_factor = float(distance_line["Distance attenuation"])
-    end_dt = start_dt + pd.Timedelta(hours=1)
 
     print(f"Generating cross section for {row['benchmark']}, start {start_dt} end {end_dt}")
     flux, time_beam_off = get_fluency_flux(start_dt=start_dt, end_dt=end_dt, file_lines=neutron_count_cut,
                                            factor=factor, distance_factor=distance_factor)
     fluency = flux * acc_time_s
-    cross_section = 0
-    cross_section_crash = 0
+    cross_section_sdc = cross_section_due = 0
     if fluency > 0:
-        cross_section = sdc_s / fluency
-        cross_section_crash = abort_zero_s / fluency
+        cross_section_sdc = sdc_s / fluency
+        cross_section_due = due_s / fluency
 
-    row["#AccTime"] = acc_time_s
-    row["#(Abort==0)"] = abort_zero_s
     row["Flux 1h"] = flux
     row["Fluency(Flux * $AccTime)"] = fluency
-    row["Cross Section SDC"] = cross_section
-    row["Cross Section Crash"] = cross_section_crash
+    row["Cross Section SDC"] = cross_section_sdc
+    row["Cross Section DUE"] = cross_section_due
     row["Time Beam Off (sec)"] = time_beam_off
     return row
 
 
 def main():
     if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <factor> <distance factor file>")
+        print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <distance file>")
         exit(1)
 
     neutron_count_file = sys.argv[1]
@@ -138,12 +135,18 @@ def main():
     # -----------------------------------------------------------------------------------------------------------------
     # Read the input csv file
     input_df = pd.read_csv(csv_file_name, delimiter=';').drop("file_path", axis="columns")
+    # Before continue we need to invert the logic of abort and end
+    input_df["#DUE"] = input_df.apply(lambda row: 1 if row["#end"] == 0 and row["#abort"] == 0 else 0, axis="columns")
+    # Convert time to datetime
     input_df["time"] = pd.to_datetime(input_df["time"])
+    # Sort based on time
     input_df = input_df.sort_values("time")
-    input_df = input_df.groupby(
-        [pd.Grouper(key="time", freq="1h", sort=True, origin="start"), "machine", "benchmark", "header"]).sum()
+    # this is Pandas' magic, it groups based on the 1h group + machine + benchmark + header
+    # then sum all the left columns
+    input_df = input_df.groupby([pd.Grouper(key="time", freq="1h", sort=True, origin="start"), "machine",
+                                 "benchmark", "header"]).sum()
+    # rename time to start_dt
     input_df = input_df.reset_index().rename(columns={"time": "start_dt"})
-
     # Apply generate_cross section function
     final_df = input_df.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
     print(final_df)
