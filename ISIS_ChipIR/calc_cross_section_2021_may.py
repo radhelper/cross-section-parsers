@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import csv
 import sys
 import pandas as pd
 import numpy as np
