@@ -21,6 +21,5 @@ ${SCRIPT_PATH}/first_parser_sdc-csv-generator.py
 ${SCRIPT_PATH}/ISIS_ChipIR/merge_neutrons_count_files.py ${NEUTRON_LOG} ${DATA_PATH}/countlog/countlog-2021*.txt
 
 # calc the cross section
-${SCRIPT_PATH}/ISIS_ChipIR/calc_cross_section_2021_may.py ${NEUTRON_LOG}\
-                                      ${K40_LOGS}/logs_parsed/logs_parsed_carolk401.csv ${DISTANCE_FILE}
+${SCRIPT_PATH}/ISIS_ChipIR/calc_cross_section_2021_may.py ${NEUTRON_LOG} ${K40_LOGS}/logs_parsed/logs_parsed_carolk401.csv ${DISTANCE_FILE}
 
