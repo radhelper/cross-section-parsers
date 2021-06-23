@@ -74,7 +74,7 @@ def generate_cross_section(row, distance_data, neutron_count):
     sdc_s = row["#SDC"]
     due_s = row["#DUE"]
     # Slicing the neutron count to not run thought all of it
-    neutron_count_cut = neutron_count[(neutron_count[:, 0] >= start_dt) & (neutron_count[:, 0] <= end_dt)]
+    neutron_count_cut = neutron_count[neutron_count[:, 0] >= start_dt]
 
     distance_line = distance_data[(distance_data["board"].str.contains(machine)) &
                                   (distance_data["start"] <= start_dt) &
