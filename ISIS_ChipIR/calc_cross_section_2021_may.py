@@ -53,7 +53,8 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
 
         if cur_dt > end_dt:
             interval_total_seconds = float((end_dt - start_dt).total_seconds())
-            flux1h = ((last_fission_counter - first_fission_counter) * factor) / interval_total_seconds
+            # flux1h = ((last_fission_counter - first_fission_counter) * factor) / interval_total_seconds
+            flux1h = (factor * (1 - (beam_off_time/interval_total_seconds)))
             if flux1h < 0:
                 print(f"SOMETHING HAPPENED HERE {start_dt} {end_dt}, {flux1h} last fission {last_fission_counter}, "
                       f"{interval_total_seconds} {beam_off_time}")
