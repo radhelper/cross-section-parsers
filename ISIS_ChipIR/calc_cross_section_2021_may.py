@@ -4,6 +4,10 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
+# Time for each run
+SECONDS_1h = 3600
+TIME_SLOT_FOR_FLUENCY = pd.Timedelta(seconds=SECONDS_1h)
+
 
 def read_count_file(in_file_name):
     """
@@ -54,7 +58,7 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
         if cur_dt > end_dt:
             interval_total_seconds = float((end_dt - start_dt).total_seconds())
             # flux1h = ((last_fission_counter - first_fission_counter) * factor) / interval_total_seconds
-            flux1h = (factor * (1 - (beam_off_time/interval_total_seconds)))
+            flux1h = (factor * (1 - (beam_off_time / interval_total_seconds)))
             if flux1h < 0:
                 print(f"SOMETHING HAPPENED HERE {start_dt} {end_dt}, {flux1h} last fission {last_fission_counter}, "
                       f"{interval_total_seconds} {beam_off_time}")
@@ -69,18 +73,25 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
 
 def generate_cross_section(row, distance_data, neutron_count):
     start_dt = row["start_dt"]
-    end_dt = start_dt + pd.Timedelta(hours=1)
     machine = row["machine"]
     acc_time = row["acc_time"]
+    acc_time_delta = pd.Timedelta(seconds=acc_time)
+    # To fix the problem when the run is bigger than 1h
+    end_dt = start_dt + TIME_SLOT_FOR_FLUENCY
+    if acc_time_delta > TIME_SLOT_FOR_FLUENCY:
+        end_dt = start_dt + acc_time_delta
+
     sdc_s = row["#SDC"]
     due_s = row["#DUE"]
     # Slicing the neutron count to not run thought all of it
     neutron_count_cut = neutron_count[neutron_count[:, 0] >= start_dt]
 
     distance_line = distance_data[(distance_data["board"].str.contains(machine)) &
-                                  (distance_data["start"] <= start_dt) &
-                                  (start_dt <= distance_data["end"])]
-    factor = float(distance_line["factor"])
+                                  (distance_data["start"] <= start_dt) & (start_dt <= distance_data["end"])]
+    # factor = float(distance_line["factor"])
+    # TODO: GAMBIARRA
+    factor = 5.6e6
+
     distance_factor = float(distance_line["Distance attenuation"])
 
     print(f"Generating cross section for {row['benchmark']}, start {start_dt} end {end_dt}")
@@ -138,14 +149,19 @@ def main():
     input_df["time"] = pd.to_datetime(input_df["time"])
     # Sort based on time
     input_df = input_df.sort_values("time")
+
     # this is Pandas' magic, it groups based on the 1h group + machine + benchmark + header
     # then sum all the left columns
-    input_df = input_df.groupby([pd.Grouper(key="time", freq="1h", sort=True, origin="start"), "machine",
-                                 "benchmark", "header"]).sum()
+    # Separate the runs that are bigger than 1h
+    runs_bigger_than_1h = input_df[input_df["acc_time"] > SECONDS_1h].groupby(
+        [pd.Grouper(key="time", freq="1h", sort=True, origin="start"), "machine", "benchmark", "header"]).sum()
+    runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].groupby(
+        [pd.Grouper(key="time", freq="1h", sort=True, origin="start"), "machine", "benchmark", "header"]).sum()
+    final_df = pd.concat([runs_1h, runs_bigger_than_1h])
     # rename time to start_dt
-    input_df = input_df.reset_index().rename(columns={"time": "start_dt"})
+    final_df = final_df.reset_index().rename(columns={"time": "start_dt"})
     # Apply generate_cross section function
-    final_df = input_df.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
+    final_df = final_df.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
     print(final_df)
     final_df.to_csv(csv_out_file_summary)
 
