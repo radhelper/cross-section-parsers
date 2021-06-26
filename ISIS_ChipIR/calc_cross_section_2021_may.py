@@ -108,7 +108,7 @@ def generate_cross_section(row, distance_data, neutron_count):
     row["Fluency(Flux * $AccTime)"] = fluency
     row["Cross Section SDC"] = cross_section_sdc
     row["Cross Section DUE"] = cross_section_due
-    row["Time Beam Off (sec)"] = time_beam_off
+    row["Time Beam Off"] = time_beam_off
     return row
 
 
@@ -154,16 +154,20 @@ def main():
     # then sum all the left columns
     # Separate the runs that are bigger than 1h
     runs_bigger_than_1h = input_df[input_df["acc_time"] > SECONDS_1h].groupby(
-        [pd.Grouper(key="time", freq="1h", sort=True, origin="start"), "machine", "benchmark", "header"]).sum()
+        ["machine", "benchmark", "header", pd.Grouper(key="time", freq="1h", sort=True, origin="start")]).sum()
     runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].groupby(
-        [pd.Grouper(key="time", freq="1h", sort=True, origin="start"), "machine", "benchmark", "header"]).sum()
+        ["machine", "benchmark", "header", pd.Grouper(key="time", freq="1h", sort=True, origin="start")]).sum()
+
     final_df = pd.concat([runs_1h, runs_bigger_than_1h])
     # rename time to start_dt
     final_df = final_df.reset_index().rename(columns={"time": "start_dt"})
     # Apply generate_cross section function
     final_df = final_df.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
-    print(final_df)
-    final_df.to_csv(csv_out_file_summary)
+    # Reorder before saving
+    final_df = final_df[['start_dt', 'end_dt', 'machine', 'benchmark', 'header', '#SDC', '#DUE', '#abort', '#end',
+                         'acc_time', 'Time Beam Off', 'acc_err', 'Flux 1h', 'Fluency(Flux * $AccTime)',
+                         'Cross Section SDC', 'Cross Section DUE']]
+    final_df.to_csv(csv_out_file_summary, index=False, date_format="%Y-%m-%d %H:%M:%S")
 
 
 #########################################################
