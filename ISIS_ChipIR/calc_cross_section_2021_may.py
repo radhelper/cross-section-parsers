@@ -40,7 +40,7 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
     first_curr_integral = None
     first_fission_counter = None
 
-    # It is faster to modify line on source than here
+    # It is faster to modify the lines on source than here
     for (cur_dt, fission_counter) in file_lines:
         # Generate datetime for line
         if start_dt <= cur_dt and first_fission_counter is None:
@@ -73,14 +73,9 @@ def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
 
 def generate_cross_section(row, distance_data, neutron_count):
     start_dt = row["start_dt"]
+    end_dt = row["end_dt"]
     machine = row["machine"]
     acc_time = row["acc_time"]
-    acc_time_delta = pd.Timedelta(seconds=acc_time)
-    # To fix the problem when the run is bigger than 1h
-    end_dt = start_dt + TIME_SLOT_FOR_FLUENCY
-    if acc_time_delta > TIME_SLOT_FOR_FLUENCY:
-        end_dt = start_dt + acc_time_delta
-
     sdc_s = row["#SDC"]
     due_s = row["#DUE"]
     # Slicing the neutron count to not run thought all of it
@@ -110,6 +105,19 @@ def generate_cross_section(row, distance_data, neutron_count):
     row["Cross Section DUE"] = cross_section_due
     row["Time Beam Off"] = time_beam_off
     return row
+
+
+def get_end_times(group):
+    # Check if it is sorted
+    assert group.equals(group.sort_values())
+    end_dt_group = group.copy()
+    # Find the time slots
+    first = group.iloc[0]
+    for i in range(len(group)):
+        if (group.iloc[i] - first) > TIME_SLOT_FOR_FLUENCY:
+            first = group.iloc[i]
+        end_dt_group.iloc[i] = first + TIME_SLOT_FOR_FLUENCY
+    return end_dt_group
 
 
 def main():
@@ -143,30 +151,39 @@ def main():
     # -----------------------------------------------------------------------------------------------------------------
     # Read the input csv file
     input_df = pd.read_csv(csv_file_name, delimiter=';').drop("file_path", axis="columns")
+
     # Before continue we need to invert the logic of abort and end
     input_df["#DUE"] = input_df.apply(lambda row: 1 if row["#end"] == 0 and row["#abort"] == 0 else 0, axis="columns")
     # Convert time to datetime
     input_df["time"] = pd.to_datetime(input_df["time"])
-    # Sort based on time
-    input_df = input_df.sort_values("time")
+    # Rename the column
+    input_df = input_df.rename(columns={"time": "start_dt"}).sort_values(by=["start_dt"])
 
-    # this is Pandas' magic, it groups based on the 1h group + machine + benchmark + header
-    # then sum all the left columns
     # Separate the runs that are bigger than 1h
-    runs_bigger_than_1h = input_df[input_df["acc_time"] > SECONDS_1h].groupby(
-        ["machine", "benchmark", "header", pd.Grouper(key="time", freq="1h", sort=True, origin="start")]).sum()
-    runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].groupby(
-        ["machine", "benchmark", "header", pd.Grouper(key="time", freq="1h", sort=True, origin="start")]).sum()
+    runs_bigger_than_1h = input_df[input_df["acc_time"] > SECONDS_1h].copy()
+    runs_bigger_than_1h["end_dt"] = runs_bigger_than_1h["start_dt"] + pd.to_timedelta(runs_bigger_than_1h["acc_time"],
+                                                                                      unit='s')
+    runs_bigger_than_1h = runs_bigger_than_1h.groupby(['machine', 'benchmark', 'header', 'start_dt', 'end_dt']).sum()
 
-    final_df = pd.concat([runs_1h, runs_bigger_than_1h])
-    # rename time to start_dt
-    final_df = final_df.reset_index().rename(columns={"time": "start_dt"})
+    # Group by hours. Only 1h runs can be grouped
+    runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].copy()
+    runs_1h['end_dt'] = runs_1h.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
+    runs_1h = runs_1h.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg(
+        {'start_dt': 'first', '#SDC': 'sum',
+         '#abort': 'sum', '#end': 'sum', 'acc_time': 'sum',
+         'acc_err': 'sum', '#DUE': 'sum'
+         }).reset_index().set_index(['machine', 'benchmark', 'header', 'start_dt', 'end_dt'])
+
+    # Create a final df
+    final_df = pd.concat([runs_1h, runs_bigger_than_1h]).reset_index()
+
     # Apply generate_cross section function
     final_df = final_df.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
     # Reorder before saving
     final_df = final_df[['start_dt', 'end_dt', 'machine', 'benchmark', 'header', '#SDC', '#DUE', '#abort', '#end',
                          'acc_time', 'Time Beam Off', 'acc_err', 'Flux 1h', 'Fluency(Flux * $AccTime)',
                          'Cross Section SDC', 'Cross Section DUE']]
+    print(final_df)
     final_df.to_csv(csv_out_file_summary, index=False, date_format="%Y-%m-%d %H:%M:%S")
 
 
