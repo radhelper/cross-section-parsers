@@ -28,47 +28,39 @@ def read_count_file(in_file_name):
 
             # Generate datetime for line
             cur_dt = datetime.strptime(year_date + " " + day_time + sec_frac, "%d/%m/%Y %H:%M:%S.%f")
-
-            file_lines.append((cur_dt, fission_counter))
+            # It is faster to modify the lines on source
+            file_lines.append(np.array([cur_dt, fission_counter]))
     return np.array(file_lines)
 
 
-def get_fluency_flux(start_dt, end_dt, file_lines, factor, distance_factor):
-    last_fission_counter = None
-    last_dt = None
-    beam_off_time = 0
-    first_curr_integral = None
-    first_fission_counter = None
+def get_fluency_flux(start_dt, end_dt, neutron_count, factor, distance_factor):
+    """
+    -- Fission counters are the ChipIR counters -- index 6 in the ChipIR log
+    -- Current Integral are the synchrotron output -- index 7 in the ChipIR log
+    """
+    three_seconds = pd.Timedelta(seconds=3)
+    # Slicing the neutron count to use only the useful information
+    # It is efficient because it returns a view of neutron count
+    neutron_count_cut = neutron_count[(neutron_count[:, 0] >= start_dt) &
+                                      (neutron_count[:, 0] <= (end_dt + three_seconds))]
+    flux, beam_off_time, last_fission_counter = 0, 0, None
+    # Get the first from the list
+    last_dt, first_fission_counter = neutron_count_cut[0]
+    # Loop thought the neutron to find the beam off
+    for (cur_dt, fission_counter) in neutron_count_cut[1:]:
+        if fission_counter == last_fission_counter:
+            beam_off_time += (cur_dt - last_dt).total_seconds()
+        last_fission_counter = fission_counter
+        last_dt = cur_dt
 
-    # It is faster to modify the lines on source than here
-    for (cur_dt, fission_counter) in file_lines:
-        # Generate datetime for line
-        if start_dt <= cur_dt and first_fission_counter is None:
-            first_fission_counter = fission_counter
-            last_dt = cur_dt
-            continue
+    interval_total_seconds = float((end_dt - start_dt).total_seconds())
+    # flux1h = ((last_fission_counter - first_fission_counter) * factor) / interval_total_seconds
+    flux = (factor * (1 - (beam_off_time / interval_total_seconds)))
+    error_str = f"FLUX<0 {start_dt} {end_dt} {flux} {last_fission_counter} {interval_total_seconds} {beam_off_time}"
+    assert flux >= 0, error_str
 
-        if first_fission_counter is not None:
-            if fission_counter == last_fission_counter:
-                beam_off_time += (cur_dt - last_dt).total_seconds()
-
-            last_fission_counter = fission_counter
-            last_dt = cur_dt
-
-        if cur_dt > end_dt:
-            interval_total_seconds = float((end_dt - start_dt).total_seconds())
-            # flux1h = ((last_fission_counter - first_fission_counter) * factor) / interval_total_seconds
-            flux1h = (factor * (1 - (beam_off_time / interval_total_seconds)))
-            if flux1h < 0:
-                print(f"SOMETHING HAPPENED HERE {start_dt} {end_dt}, {flux1h} last fission {last_fission_counter}, "
-                      f"{interval_total_seconds} {beam_off_time}")
-                return 0, 0
-
-            flux1h *= distance_factor
-            return flux1h, beam_off_time
-        elif first_curr_integral is not None:
-            last_fission_counter = fission_counter
-    return 0, 0
+    flux *= distance_factor
+    return flux, beam_off_time
 
 
 def generate_cross_section(row, distance_data, neutron_count):
@@ -78,9 +70,6 @@ def generate_cross_section(row, distance_data, neutron_count):
     acc_time = row["acc_time"]
     sdc_s = row["#SDC"]
     due_s = row["#DUE"]
-    # Slicing the neutron count to not run thought all of it
-    neutron_count_cut = neutron_count[neutron_count[:, 0] >= start_dt]
-
     distance_line = distance_data[(distance_data["board"].str.contains(machine)) &
                                   (distance_data["start"] <= start_dt) & (start_dt <= distance_data["end"])]
     # factor = float(distance_line["factor"])
@@ -90,7 +79,7 @@ def generate_cross_section(row, distance_data, neutron_count):
     distance_factor = float(distance_line["Distance attenuation"])
 
     print(f"Generating cross section for {row['benchmark']}, start {start_dt} end {end_dt}")
-    flux, time_beam_off = get_fluency_flux(start_dt=start_dt, end_dt=end_dt, file_lines=neutron_count_cut,
+    flux, time_beam_off = get_fluency_flux(start_dt=start_dt, end_dt=end_dt, neutron_count=neutron_count,
                                            factor=factor, distance_factor=distance_factor)
     fluency = flux * acc_time
     cross_section_sdc = cross_section_due = 0
