@@ -44,9 +44,6 @@ def main():
     if not os.path.isdir(folder_p):
         os.mkdir(folder_p)
 
-    # Header for all csvs
-    header_csv = ["time", "machine", "benchmark", "#SDC", "#appcrash", "#syscrash", "#end", "acc_time", "header",
-                  "acc_err", "file_path"]
     for fi in all_logs:
         m = re.match(r'.*/(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(.*)_(.*).log', fi)
         if m:
@@ -60,7 +57,7 @@ def main():
             machine_name = m.group(8)
 
             start_dt = datetime(year, month, day, hour, minute, sec).ctime()
-            sdc, end, abort, sys_crash, acc_time, acc_err = [0] * 6
+            sdc, end, abort, app_crash, sys_crash, acc_time, acc_err = [0] * 7
             header = "unknown"
 
             with open(fi, "r") as lines:
@@ -84,9 +81,12 @@ def main():
                         acc_err = int(m.group(1))
 
                     # TODO: Add on the log helper a way to write framework errors
-                    m = re.match(".*soft APP reboot.", line)
+                    m = re.match(".*ABORT.*", line)
                     if m:
                         abort += 1
+                    m = re.match(".*soft APP reboot.", line)
+                    if m:
+                        app_crash += 1
                     m = re.match(".*power cycle", line)
                     if m:
                         sys_crash += 1
@@ -95,10 +95,10 @@ def main():
                         end = 1
             new_line_dict = {
                 "time": start_dt, "machine": machine_name, "benchmark": benchmark, "header": header, "#SDC": sdc,
-                "#appcrash": abort, "#syscrash": sys_crash, "#end": end, "acc_err": acc_err, "acc_time": acc_time,
-                "file_path": fi
+                "#appcrash": app_crash, "#abort": abort, "#syscrash": sys_crash, "#end": end, "acc_err": acc_err,
+                "acc_time": acc_time, "file_path": fi
             }
-
+            header_csv = list(new_line_dict.keys())
             with open(f'./{folder_p}/logs_parsed_{machine_name}.csv', 'a') as fp:
                 csv_writer = csv.DictWriter(fp, fieldnames=header_csv, delimiter=';')
                 if machine_name not in machine_dict:

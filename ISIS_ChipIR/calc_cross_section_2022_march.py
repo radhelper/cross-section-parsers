@@ -9,7 +9,7 @@ import pandas as pd
 SECONDS_1h = 3600
 
 
-def read_count_file(in_file_name):
+def read_count_file(in_file_name: str):
     """
     Read neutron log file
     :param in_file_name: neutron log filename
@@ -33,7 +33,8 @@ def read_count_file(in_file_name):
     return np.array(file_lines)
 
 
-def get_fluency_flux(start_dt, end_dt, neutron_count, factor, distance_factor):
+def get_fluency_flux(start_dt: datetime, end_dt, neutron_count: np.array, facility_factor: float,
+                     distance_attenuation: float):
     """
     -- Fission counters are the ChipIR counters -- index 6 in the ChipIR log
     -- Current Integral are the synchrotron output -- index 7 in the ChipIR log
@@ -43,7 +44,7 @@ def get_fluency_flux(start_dt, end_dt, neutron_count, factor, distance_factor):
     # It is efficient because it returns a view of neutron count
     neutron_count_cut = neutron_count[(neutron_count[:, 0] >= start_dt) &
                                       (neutron_count[:, 0] <= (end_dt + three_seconds))]
-    flux, beam_off_time, last_fission_counter = 0, 0, None
+    beam_off_time, last_fission_counter = 0, None
     # Get the first from the list
     last_dt, first_fission_counter = neutron_count_cut[0]
     # Loop thought the neutron to find the beam off
@@ -54,39 +55,36 @@ def get_fluency_flux(start_dt, end_dt, neutron_count, factor, distance_factor):
         last_dt = cur_dt
 
     interval_total_seconds = float((end_dt - start_dt).total_seconds())
-    # flux1h = ((last_fission_counter - first_fission_counter) * factor) / interval_total_seconds
-    flux = (factor * (1 - (beam_off_time / interval_total_seconds)))
+    flux = ((last_fission_counter - first_fission_counter) * facility_factor) / interval_total_seconds
     error_str = f"FLUX<0 {start_dt} {end_dt} {flux} {last_fission_counter} {interval_total_seconds} {beam_off_time}"
     assert flux >= 0, error_str
 
-    flux *= distance_factor
+    flux *= distance_attenuation
     return flux, beam_off_time
 
 
-def generate_cross_section(row, distance_data, neutron_count):
+def generate_cross_section(row: pd.Series, distance_data: dict, neutron_count: np.array):
     start_dt = row["start_dt"]
     end_dt = row["end_dt"]
     machine = row["machine"]
     acc_time = row["acc_time"]
     sdc_s = row["#SDC"]
-    due_s = row["#appcrash"]
+    app_s = row["#appcrash"]
     sys_s = row["#syscrash"]
     distance_line = distance_data[(distance_data["board"].str.contains(machine)) &
-                                  (distance_data["start"] <= start_dt) & (start_dt <= distance_data["end"])]
-    # factor = float(distance_line["factor"])
-    # TODO: GAMBIARRA
-    factor = 5.6e6
-
-    distance_factor = float(distance_line["Distance attenuation"])
+                                  (distance_data["start"] <= start_dt) &
+                                  (start_dt <= distance_data["end"])]
+    facility_factor = float(distance_line["facility_factor"])
+    distance_attenuation = float(distance_line["Distance attenuation"])
 
     print(f"Generating cross section for {row['benchmark']}, start {start_dt} end {end_dt}")
     flux, time_beam_off = get_fluency_flux(start_dt=start_dt, end_dt=end_dt, neutron_count=neutron_count,
-                                           factor=factor, distance_factor=distance_factor)
+                                           facility_factor=facility_factor, distance_attenuation=distance_attenuation)
     fluency = flux * acc_time
     cross_section_sdc = cross_section_app = cross_section_sys = 0
     if fluency > 0:
         cross_section_sdc = sdc_s / fluency
-        cross_section_app = due_s / fluency
+        cross_section_app = app_s / fluency
         cross_section_sys = sys_s / fluency
 
     row["end_dt"] = end_dt
@@ -115,7 +113,7 @@ def get_end_times(group):
 
 def main():
     if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <distance factor file>")
+        print(f"Usage: {sys.argv[0]} <neutron counts input file> <csv file> <distance facility_factor file>")
         exit(1)
 
     neutron_count_file = sys.argv[1]
@@ -139,13 +137,11 @@ def main():
     neutron_count = read_count_file(neutron_count_file)
 
     csv_out_file_summary = csv_file_name.replace(".csv", "_cross_section.csv")
-    print(f"in: {csv_file_name}")
-    print(f"out: {csv_out_file_summary}")
     # -----------------------------------------------------------------------------------------------------------------
     # Read the input csv file
     input_df = pd.read_csv(csv_file_name, delimiter=';').drop("file_path", axis="columns")
 
-    # Before continue we need to invert the logic of appcrash and end
+    # Before continue we need to invert the logic of app crash and end
     input_df["#DUE"] = input_df.apply(lambda row: 1 if row["#end"] == 0 and row["#appcrash"] == 0 else 0,
                                       axis="columns")
     # Convert time to datetime
@@ -178,7 +174,8 @@ def main():
         ['start_dt', 'end_dt', 'machine', 'benchmark', 'header', '#SDC', '#appcrash', '#syscrash', '#end',
          'acc_time', 'Time Beam Off', 'acc_err', 'Flux 1h', 'Fluency(Flux * $AccTime)',
          'Cross Section SDC', 'Cross Section appcrash', 'Cross Section syscrash']]
-    print(final_df)
+    print(f"in: {csv_file_name}")
+    print(f"out: {csv_out_file_summary}")
     final_df.to_csv(csv_out_file_summary, index=False, date_format="%Y-%m-%d %H:%M:%S")
 
 
