@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 import csv
+import glob
+import os
 import re
 from datetime import datetime
-import os
-import glob
 
 
 def main():
-    tmp_dir = "/tmp/parserSDC"
+    tmp_dir = "/tmp"
     folder_p = "logs_parsed"
 
     if not os.path.isdir(tmp_dir):
@@ -45,8 +45,8 @@ def main():
         os.mkdir(folder_p)
 
     # Header for all csvs
-    header_csv = ["time", "machine", "benchmark", "#SDC", "#abort", "#end", "acc_time", "header", "acc_err",
-                  "file_path"]
+    header_csv = ["time", "machine", "benchmark", "#SDC", "#appcrash", "#syscrash", "#end", "acc_time", "header",
+                  "acc_err", "file_path"]
     for fi in all_logs:
         m = re.match(r'.*/(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(.*)_(.*).log', fi)
         if m:
@@ -60,8 +60,9 @@ def main():
             machine_name = m.group(8)
 
             start_dt = datetime(year, month, day, hour, minute, sec).ctime()
-            sdc, end, abort, acc_time, acc_err = [0] * 5
+            sdc, end, abort, sys_crash, acc_time, acc_err = [0] * 6
             header = "unknown"
+
             with open(fi, "r") as lines:
                 # Only the cannon markers of LogHelper must be added here
                 for line in lines:
@@ -83,16 +84,19 @@ def main():
                         acc_err = int(m.group(1))
 
                     # TODO: Add on the log helper a way to write framework errors
-                    m = re.match(".*ABORT.*", line)
+                    m = re.match(".*soft APP reboot.", line)
                     if m:
-                        abort = 1
-
+                        abort += 1
+                    m = re.match(".*power cycle", line)
+                    if m:
+                        sys_crash += 1
                     m = re.match(".*END.*", line)
                     if m:
                         end = 1
             new_line_dict = {
                 "time": start_dt, "machine": machine_name, "benchmark": benchmark, "header": header, "#SDC": sdc,
-                "#abort": abort, "#end": end, "acc_err": acc_err, "acc_time": acc_time, "file_path": fi
+                "#appcrash": abort, "#syscrash": sys_crash, "#end": end, "acc_err": acc_err, "acc_time": acc_time,
+                "file_path": fi
             }
 
             with open(f'./{folder_p}/logs_parsed_{machine_name}.csv', 'a') as fp:
