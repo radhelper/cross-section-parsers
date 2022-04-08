@@ -142,7 +142,7 @@ def main():
     input_df = pd.read_csv(csv_file_name, delimiter=';').drop("file_path", axis="columns")
 
     # Before continue we need to invert the logic of app crash and end
-    input_df["#DUE"] = ((input_df["#appcrash"] != 0) | (input_df["#syscrash"] != 0)).astype(int)
+    input_df["#DUE"] = input_df.apply(lambda r: 1 if r["#appcrash"] != 0 or r["#syscrash"] != 0 else 0, axis="columns")
     # Convert time to datetime
     input_df["time"] = pd.to_datetime(input_df["time"])
     # Rename the column
@@ -157,11 +157,12 @@ def main():
     # Group by hours. Only 1h runs can be grouped
     runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].copy()
     runs_1h['end_dt'] = runs_1h.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
-    runs_1h = runs_1h.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg(
-        {'start_dt': 'first', '#SDC': 'sum',
-         '#appcrash': 'sum', '#syscrash': 'sum', '#end': 'sum', 'acc_time': 'sum',
-         'acc_err': 'sum', '#DUE': 'sum'
-         }).reset_index().set_index(['machine', 'benchmark', 'header', 'start_dt', 'end_dt'])
+    runs_1h = runs_1h.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg({'start_dt': 'first', '#SDC': 'sum',
+                                                                                 '#appcrash': 'sum', '#syscrash': 'sum',
+                                                                                 '#end': 'sum', 'acc_time': 'sum',
+                                                                                 'acc_err': 'sum', '#DUE': 'sum'
+                                                                                 })
+    runs_1h = runs_1h.reset_index().set_index(['machine', 'benchmark', 'header', 'start_dt', 'end_dt'])
 
     # Create a final df
     final_df = pd.concat([runs_1h, runs_bigger_than_1h]).reset_index()
