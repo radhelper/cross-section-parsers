@@ -31,7 +31,7 @@ def getDt(yearDate, dayTime, secFrac):
 
 def getWenderFactor(startDT):
     # Oct 2 9:03  52624.6
-    if startDT < datetime(2018, 10, 2, 9, 03, 0, 0):
+    if startDT < datetime(2018, 10, 2, 9, 3, 0, 0):
         return 52624.6
     # Oct 2	16:33	53089.1
     elif startDT < datetime(2018, 10, 2, 16, 33, 0, 0):
@@ -206,7 +206,7 @@ def get_distance_data(distance_factor_file):
 
 def main():
     if len(sys.argv) < 3:
-        print "Usage: %s <neutron counts input file> <csv file> <distance factor file>" % (sys.argv[0])
+        print("Usage: %s <neutron counts input file> <csv file> <distance factor file>" % (sys.argv[0]))
         sys.exit(1)
 
     in_file_name = sys.argv[1]
@@ -216,8 +216,8 @@ def main():
     distance_data = get_distance_data(distance_factor_file=distance_factor_file)
 
     csv_out_file_summary = csv_file_name.replace(".csv", "_cross_section_summary.csv")
-    print "in: " + csv_file_name
-    print "out: " + csv_out_file_summary
+    print("in: " + csv_file_name)
+    print("out: " + csv_out_file_summary)
 
     with open(csv_file_name, "r") as csv_input, open(csv_out_file_summary, "w") as csv_summary:
         # reading and starting the csvs files
@@ -240,7 +240,7 @@ def main():
         file_lines = read_count_file(in_file_name)
 
         for bench in grouped_benchmarks:
-            print "Parsing for {}".format(bench)
+            print("Parsing for {}".format(bench))
             lines = grouped_benchmarks[bench]
             i = 0
             while i < len(lines) - 1:
@@ -248,7 +248,7 @@ def main():
                     start_dt = datetime.strptime(lines[i][0].strip(), "%c")
                     end_dt = datetime.strptime(lines[i + 1][0].strip(), "%c")
                 except ValueError as err:
-                    print err
+                    print(err)
                     continue
 
                 machine = lines[i][1]
@@ -286,7 +286,7 @@ def main():
                 #     i += 1
                 #     continue
 
-                print "Generating cross section for {}, start {} end {}".format(bench.strip(), start_dt, end_dt)
+                print("Generating cross section for {}, start {} end {}".format(bench.strip(), start_dt, end_dt))
 
                 # compute 1h flux; sum SDC, ACC_TIME, Abort with 0; compute fluency (flux*(sum ACC_TIME))
                 distance_factor = distance_data[lines[i][1].strip()]

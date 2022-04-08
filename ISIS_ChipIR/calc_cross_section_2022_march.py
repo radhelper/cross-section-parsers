@@ -142,8 +142,7 @@ def main():
     input_df = pd.read_csv(csv_file_name, delimiter=';').drop("file_path", axis="columns")
 
     # Before continue we need to invert the logic of app crash and end
-    input_df["#DUE"] = input_df.apply(lambda row: 1 if row["#end"] == 0 and row["#appcrash"] == 0 else 0,
-                                      axis="columns")
+    input_df["#DUE"] = (input_df["#appcrash"] != 0 or input_df["#syscrash"] != 0).astype(int)
     # Convert time to datetime
     input_df["time"] = pd.to_datetime(input_df["time"])
     # Rename the column
