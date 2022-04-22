@@ -149,31 +149,43 @@ def main():
     input_df = input_df.rename(columns={"time": "start_dt"}).sort_values(by=["start_dt"])
 
     # Separate the runs that are bigger than 1h
-    runs_bigger_than_1h = input_df[input_df["acc_time"] > SECONDS_1h].copy()
-    runs_bigger_than_1h["end_dt"] = runs_bigger_than_1h["start_dt"] + pd.to_timedelta(runs_bigger_than_1h["acc_time"],
-                                                                                      unit='s')
-    runs_bigger_than_1h = runs_bigger_than_1h.groupby(['machine', 'benchmark', 'header', 'start_dt', 'end_dt']).sum()
+    # runs_bigger_than_1h = input_df[input_df["acc_time"] > SECONDS_1h].copy()
+    # runs_bigger_than_1h["end_dt"] = runs_bigger_than_1h["start_dt"] + pd.to_timedelta(runs_bigger_than_1h["acc_time"],
+    #                                                                                   unit='s')
+    # runs_bigger_than_1h = runs_bigger_than_1h.groupby(['machine', 'benchmark', 'header', 'start_dt', 'end_dt']).sum()
 
     # Group by hours. Only 1h runs can be grouped
-    runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].copy()
-    runs_1h['end_dt'] = runs_1h.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
-    runs_1h = runs_1h.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg({'start_dt': 'first', '#SDC': 'sum',
-                                                                                 '#appcrash': 'sum', '#syscrash': 'sum',
-                                                                                 '#end': 'sum', 'acc_time': 'sum',
-                                                                                 'acc_err': 'sum', '#DUE': 'sum'
-                                                                                 })
-    runs_1h = runs_1h.reset_index().set_index(['machine', 'benchmark', 'header', 'start_dt', 'end_dt'])
+    # runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].copy()
+    # runs_1h['end_dt'] = runs_1h.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
+    # runs_1h = runs_1h.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg({'start_dt': 'first', '#SDC': 'sum',
+    #                                                                              '#appcrash': 'sum', '#syscrash': 'sum',
+    #                                                                              '#end': 'sum', 'acc_time': 'sum',
+    #                                                                              'acc_err': 'sum', '#DUE': 'sum'
+    #                                                                              })
+    # runs_1h = runs_1h.reset_index().set_index(['machine', 'benchmark', 'header', 'start_dt', 'end_dt'])
 
     # Create a final df
-    final_df = pd.concat([runs_1h, runs_bigger_than_1h]).reset_index()
+    # final_df = pd.concat([runs_1h, runs_bigger_than_1h]).reset_index()
+    ####################################################################################################################
+    # TO USE only 1h ACC TIME and bigger acc times will be placed in chunks
+    runs = input_df.copy()
+    runs['end_dt'] = runs.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
+    runs = runs.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg({'start_dt': 'first', '#SDC': 'sum',
+                                                                           '#appcrash': 'sum', '#syscrash': 'sum',
+                                                                           '#end': 'sum', 'acc_time': 'sum',
+                                                                           'acc_err': 'sum', '#DUE': 'sum'
+                                                                           }).reset_index()
+    runs["original_acc_time"] = runs["acc_time"]
+    runs.loc[runs["acc_time"] > SECONDS_1h, "acc_time"] = SECONDS_1h
+    ####################################################################################################################
 
     # Apply generate_cross section function
-    final_df = final_df.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
+    final_df = runs.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
     # Reorder before saving
     final_df = final_df[
         ['start_dt', 'end_dt', 'machine', 'benchmark', 'header', '#SDC', '#appcrash', '#syscrash', '#end',
          'acc_time', 'Time Beam Off', 'acc_err', 'Flux 1h', 'Fluency(Flux * $AccTime)',
-         'Cross Section SDC', 'Cross Section appcrash', 'Cross Section syscrash']]
+         'Cross Section SDC', 'Cross Section appcrash', 'Cross Section syscrash', "original_acc_time"]]
     print(f"in: {csv_file_name}")
     print(f"out: {csv_out_file_summary}")
     final_df.to_csv(csv_out_file_summary, index=False, date_format="%Y-%m-%d %H:%M:%S")
