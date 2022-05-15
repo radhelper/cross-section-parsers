@@ -127,10 +127,10 @@ def main():
     distance_data = pd.read_csv(distance_factor_file)
     # Replace the hours and the minutes to the last
     distance_data["start"] = distance_data["start"].apply(
-        lambda row: datetime.strptime(row, "%m/%d/%Y").replace(hour=0, minute=0)
+        lambda row: datetime.strptime(row, "%m/%d/%Y %H:%M:%S")
     )
     distance_data["end"] = distance_data["end"].apply(
-        lambda row: datetime.strptime(row, "%m/%d/%Y").replace(hour=23, minute=59)
+        lambda row: datetime.strptime(row, "%m/%d/%Y %H:%M:%S")
     )
     # -----------------------------------------------------------------------------------------------------------------
     # We need to read the neutron count files before calling get_fluency_flux
