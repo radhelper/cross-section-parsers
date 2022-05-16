@@ -172,8 +172,9 @@ def main():
     runs['end_dt'] = runs.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
     runs = runs.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg({'start_dt': 'first', '#SDC': 'sum',
                                                                            '#appcrash': 'sum', '#syscrash': 'sum',
-                                                                           '#end': 'sum', 'acc_time': 'sum',
-                                                                           'acc_err': 'sum', '#DUE': 'sum'
+                                                                           '#end': 'sum', '#abort': 'sum',
+                                                                           'acc_time': 'sum', 'acc_err': 'sum',
+                                                                           '#DUE': 'sum'
                                                                            }).reset_index()
     runs["original_acc_time"] = runs["acc_time"]
     runs.loc[runs["acc_time"] > SECONDS_1h, "acc_time"] = SECONDS_1h
@@ -181,11 +182,6 @@ def main():
 
     # Apply generate_cross section function
     final_df = runs.apply(generate_cross_section, axis="columns", args=(distance_data, neutron_count))
-    # Reorder before saving
-    final_df = final_df[
-        ['start_dt', 'end_dt', 'machine', 'benchmark', 'header', '#SDC', '#appcrash', '#syscrash', '#end',
-         'acc_time', 'Time Beam Off', 'acc_err', 'Flux 1h', 'Fluency(Flux * $AccTime)',
-         'Cross Section SDC', 'Cross Section appcrash', 'Cross Section syscrash', "original_acc_time"]]
     print(f"in: {csv_file_name}")
     print(f"out: {csv_out_file_summary}")
     final_df.to_csv(csv_out_file_summary, index=False, date_format="%Y-%m-%d %H:%M:%S")

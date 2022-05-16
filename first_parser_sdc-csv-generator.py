@@ -45,16 +45,16 @@ def main():
         os.mkdir(folder_p)
 
     for fi in all_logs:
-        m = re.match(r'.*/(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(.*)_(.*).log', fi)
-        if m:
-            year = int(m.group(1))
-            month = int(m.group(2))
-            day = int(m.group(3))
-            hour = int(m.group(4))
-            minute = int(m.group(5))
-            sec = int(m.group(6))
-            benchmark = m.group(7)
-            machine_name = m.group(8)
+        log_m = re.match(r'.*/(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)_(.*)_(.*).log', fi)
+        if log_m:
+            year = int(log_m.group(1))
+            month = int(log_m.group(2))
+            day = int(log_m.group(3))
+            hour = int(log_m.group(4))
+            minute = int(log_m.group(5))
+            sec = int(log_m.group(6))
+            benchmark = log_m.group(7)
+            machine_name = log_m.group(8)
 
             start_dt = datetime(year, month, day, hour, minute, sec).ctime()
             sdc, end, abort, app_crash, sys_crash, acc_time, acc_err = [0] * 7
@@ -63,35 +63,30 @@ def main():
             with open(fi, "r") as lines:
                 # Only the cannon markers of LogHelper must be added here
                 for line in lines:
-                    m = re.match(r".*HEADER(.*)", line)
-                    if m:
-                        header = m.group(1).replace(";", "-")
+                    header_m = re.match(r".*HEADER(.*)", line)
+                    if header_m:
+                        header = header_m.group(1).replace(";", "-")
 
-                    m = re.match(".*SDC.*", line)
-                    if m:
+                    if re.match(".*SDC.*", line):
                         sdc += 1
                         total_sdc += 1
 
-                    m = re.match(r".*AccTime:(\d+.\d+)", line)
-                    if m:
-                        acc_time = float(m.group(1))
+                    acc_time_m = re.match(r".*AccTime:(\d+.\d+)", line)
+                    if acc_time_m:
+                        acc_time = float(acc_time_m.group(1))
 
-                    m = re.match(r".*AccErr:(\d+)", line)
-                    if m:
-                        acc_err = int(m.group(1))
+                    acc_m = re.match(r".*AccErr:(\d+)", line)
+                    if acc_m:
+                        acc_err = int(acc_m.group(1))
 
                     # TODO: Add on the log helper a way to write framework errors
-                    m = re.match(".*ABORT.*", line)
-                    if m:
+                    if re.match(".*ABORT.*", line):
                         abort += 1
-                    m = re.match(".*soft APP reboot.", line)
-                    if m:
+                    if re.match(".*soft APP reboot.", line):
                         app_crash += 1
-                    m = re.match(".*power cycle", line)
-                    if m:
+                    if re.match(".*power cycle", line):
                         sys_crash += 1
-                    m = re.match(".*END.*", line)
-                    if m:
+                    if re.match(".*END.*", line):
                         end = 1
             new_line_dict = {
                 "time": start_dt, "machine": machine_name, "benchmark": benchmark, "header": header, "#SDC": sdc,
