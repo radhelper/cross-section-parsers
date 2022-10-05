@@ -58,14 +58,23 @@ def main():
 
             start_dt = datetime(year, month, day, hour, minute, sec).ctime()
             sdc, end, abort, app_crash, sys_crash, acc_time, acc_err = [0] * 7
-            header = "unknown"
+            header = None
 
             with open(fi, "r") as lines:
                 # Only the cannon markers of LogHelper must be added here
                 for line in lines:
-                    header_m = re.match(r".*HEADER(.*)", line)
+                    header_m = re.match(r".*#HEADER(.*)", line)
                     if header_m:
                         header = header_m.group(1).replace(";", "-")
+
+                    # server_header_m = re.match(r".*#SERVER_HEADER(.*)", line)
+                    # elif server_header_m:
+                    #     header = server_header_m.group(1).replace(";", "-")
+
+                    # Continue until a header is found
+                    # This is to guarantee that nothing before of the official header will be counted
+                    if header is None:
+                        continue
 
                     if re.match(".*SDC.*", line):
                         sdc += 1
@@ -82,9 +91,9 @@ def main():
                     # TODO: Add on the log helper a way to write framework errors
                     if re.match(".*ABORT.*", line):
                         abort += 1
-                    if re.match(".*soft APP reboot.", line):
+                    if re.match(".*soft APP reboot.*", line):
                         app_crash += 1
-                    if re.match(".*power cycle", line):
+                    if re.match(".*power cycle.*", line):
                         sys_crash += 1
                     if re.match(".*END.*", line):
                         end = 1
