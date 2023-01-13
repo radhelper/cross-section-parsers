@@ -148,26 +148,8 @@ def main():
     # Rename the column
     input_df = input_df.rename(columns={"time": "start_dt"}).sort_values(by=["start_dt"])
 
-    # Separate the runs that are bigger than 1h
-    # runs_bigger_than_1h = input_df[input_df["acc_time"] > SECONDS_1h].copy()
-    # runs_bigger_than_1h["end_dt"] = runs_bigger_than_1h["start_dt"] + pd.to_timedelta(runs_bigger_than_1h["acc_time"],
-    #                                                                                   unit='s')
-    # runs_bigger_than_1h = runs_bigger_than_1h.groupby(['machine', 'benchmark', 'header', 'start_dt', 'end_dt']).sum()
-
-    # Group by hours. Only 1h runs can be grouped
-    # runs_1h = input_df[input_df["acc_time"] <= SECONDS_1h].copy()
-    # runs_1h['end_dt'] = runs_1h.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
-    # runs_1h = runs_1h.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg({'start_dt': 'first', '#SDC': 'sum',
-    #                                                                              '#appcrash': 'sum', '#syscrash': 'sum',
-    #                                                                              '#end': 'sum', 'acc_time': 'sum',
-    #                                                                              'acc_err': 'sum', '#DUE': 'sum'
-    #                                                                              })
-    # runs_1h = runs_1h.reset_index().set_index(['machine', 'benchmark', 'header', 'start_dt', 'end_dt'])
-
-    # Create a final df
-    # final_df = pd.concat([runs_1h, runs_bigger_than_1h]).reset_index()
     ####################################################################################################################
-    # TO USE only 1h ACC TIME and bigger acc times will be placed in chunks
+    # Get chunks of acc time
     runs = input_df.copy()
     runs['end_dt'] = runs.groupby(['machine', 'benchmark', 'header'])['start_dt'].transform(get_end_times)
     runs = runs.groupby(['machine', 'benchmark', 'header', 'end_dt']).agg({'start_dt': 'first', '#SDC': 'sum',
